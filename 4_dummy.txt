@@ -1,0 +1,80 @@
+use BOI_SLA
+
+Go
+--SLA GreenAmberRed updation Start
+
+/*SLA Calcuation --- Start*/
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+
+set Tmp_SLA_Risk =  CASE
+
+--SLA Target is 16 hours (Standard)
+
+WHEN Tmp_SLA_Target  = '16:00:00' THEN 
+(CASE WHEN cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) >= 0 and cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) <= 5 THEN 'Green'
+ WHEN cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) >=6 and cast( Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric)<=11 THEN 'Amber'
+ WHEN cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) >=12 and cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) <=16 THEN 'Red'
+ ELSE 'Beyond SLA'END)
+
+
+--SLA Target is 8 hours (Enhanced) , This logic value changed on 16-Nov-2020
+
+WHEN Tmp_SLA_Target = '8:00:00' THEN 
+(CASE WHEN cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) >=0 and cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) <=5 THEN 'Green'
+ WHEN cast( Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) >=6 and cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) <=11 THEN 'Amber'
+ WHEN cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) >=12 and cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric) <=16 THEN 'Red'
+ ELSE 'Beyond SLA'END)
+
+
+--SLA Target is 4 hours (Emergency)
+
+WHEN Tmp_SLA_Target = '4:00:00'  THEN 
+(CASE WHEN cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','') as numeric)=0  THEN 'Amber'
+ WHEN cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','')as numeric) >=1 and cast(Replace(left(Tmp_SLA_Calc_Time,charindex(':',Tmp_SLA_Calc_Time)),':','')as numeric) <=4 THEN 'Red'
+ ELSE 'Beyond SLA'END)
+ end WHERE Tmp_SLA_Calc_Time IS NOT NULL
+
+Go
+--SLA GreenAmberRed updation End
+
+update [BOI_SLA].[dbo].[Tbl_4_DBPMS_LastRowEntry]
+set RiskPriority = 1
+where [Tmp_SLA_Risk] ='Red'
+
+update [BOI_SLA].[dbo].[Tbl_4_DBPMS_LastRowEntry]
+set RiskPriority = 2
+where [Tmp_SLA_Risk] ='Amber'
+
+update [BOI_SLA].[dbo].[Tbl_4_DBPMS_LastRowEntry]
+set RiskPriority = 3
+where [Tmp_SLA_Risk] ='Green'
+
+
+
+/*First Update this query where RiskPriority is null and Tmp_SLA_Calc_Time is null -- Updated on 24-Nov-2019*/
+GO
+/*update [Tbl_4_DBPMS_LastRowEntry] 
+
+set RiskPriority=3,Tmp_SLA_Risk='Green'
+
+where RiskPriority is null and Tmp_SLA_Calc_Time is null */
+
+GO
+
+/*Second Update this query Tmp_SLA_Calc_Time is null -- Updated on 24-Nov-2019 */
+update [Tbl_4_DBPMS_LastRowEntry] 
+
+set Tmp_SLA_Calc_Time='00:00:00'
+
+where Tmp_SLA_Calc_Time is null
+
+GO
+
+/* Update SLA Missed cases travel detials --- Start -- added on 28-Jul-2020*/
+
+insert into tbl_SLAMissedCasesTravel
+select Tmp_Segment,[Review ID],Steps,[Final Decision],[User Name],Tmp_SLA_Risk,Tmp_SLA_Calc_Time,Tmp_SLA_Target,RemainingHrs,RiskPriority,format(getdate(),'MM/dd/yyyy hh:mm:ss tt') as Dttime from vw_SLA_Calc_Final_OP 
+where Tmp_SLA_Calc_Time > Tmp_SLA_Target
+
+/* Update SLA Missed cases travel detials --- End -- added on 28-Jul-2020*/

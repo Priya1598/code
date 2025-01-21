@@ -1,0 +1,337 @@
+Use BOI_SLA
+
+Go
+
+/*Update Quries --- Start*/
+/*4_Network Days calculation --- Start*/
+
+/*4_A_Find the holiday list & update the count in Tbl_4_DBPMS_LastRowEntry table --- Start*/
+update ck
+set ck.BOIHoldyCnt = tp.[hcount]
+from [dbo].[Tbl_4_DBPMS_LastRowEntry] ck, (select p.[Review ID], count (s.HolyDate) as hcount
+from HolidayList s ,[dbo].[Tbl_4_DBPMS_LastRowEntry] p 
+where  s.HolyDate between cast(p.Stdttime as date) and cast(p.Endtime as date) and DATENAME(dw, s.holydate)!='Saturday' and DATENAME(dw, s.holydate)!='Sunday' and p.Stdttime != '1/1/1900  12:00:00 AM' group by p.[Review ID],p.Stdttime ,p.Endtime)tp
+where ck.[review id]=tp.[Review ID]
+Go
+/*4_A_Find the holiday list & update the count in Tbl_4_DBPMS_LastRowEntry table --- End*/
+
+update mk
+set mk.WkDayCnt = ks.[NoOfWeekDays]
+from [dbo].[Tbl_4_DBPMS_LastRowEntry] mk,
+(SELECT ap.[Review id],
+   (DATEDIFF(dd, cast(ap.Stdttime as date) , cast(ap.Endtime as date) ) + 1)
+  -(DATEDIFF(wk, cast(ap.Stdttime as date) , cast(ap.Endtime as date)) * 2)
+  -(CASE WHEN DATENAME(dw, cast(ap.Stdttime as date)) = 'Sunday' THEN 1 ELSE 0 END)
+  -(CASE WHEN DATENAME(dw,cast(ap.Endtime as date)) = 'Saturday' THEN 1 ELSE 0 END)
+  As NoOfWeekDays from Tbl_4_DBPMS_LastRowEntry ap where ap.Stdttime != '1/1/1900  12:00:00 AM')ks
+  where mk.[review id]=ks.[Review ID]
+
+Go
+/*Network Dyas calculation --- End*/
+
+
+/*Calculate the BOI Holiday & Network Days --- Start*/
+go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_NetwrkDay = case 
+when BOIHoldyCnt is not null  and BOIHoldyCnt is not null then
+WkDayCnt-BOIHoldyCnt
+when BOIHoldyCnt is null  and WkDayCnt is not null then
+WkDayCnt
+else null
+End 
+/*Calculate the BOI Holday & Network Days --- End*/
+
+/*Temp update query due to year change error - updated on 4-Jan-2021*/
+update BOI_SLA.[dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_NetwrkDay=Tmp_NetwrkDay+1 
+where convert(date,Stdttime)='12/31/2020'
+/*Temp update query due to year change error - updated on 4-Jan-2021*/
+
+/*Temp update query due to year change error - updated on 29-Dec-2022*/
+/*update DBPMS.[dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_NetwrkDay=Tmp_NetwrkDay+1 
+where convert(date,Stdttime)='12/23/2022'*/
+/*Temp update query due to year change error - updated on 29-Dec-2022*/
+
+/*SLA Calcuation --- Start -- updated on 24-Nov-2019*/
+
+
+Go
+Declare @DLStartDtTime varchar(30) = (select Daylight_Start_Time from Daylight_Savings_Timings)
+Declare @DLEndDtTime varchar(30) = (select Daylight_End_Time from Daylight_Savings_Timings)
+
+/*If Daylight Savings Start or End Replace, if Daylight Savings Start Update (14:30:00 - 22:30:00) : If Daylight savings End(13:30:00 - 21:30:00) Here -- Start*/
+
+update BOI_SLA.[dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_SLA_Calc_Time=
+CASE
+WHEN CAST(Tmp_NetwrkDay AS NUMERIC) = 1 THEN 
+						convert(varchar(20),
+			cast(
+			convert (varchar(20), datediff(s,cast(Stdttime as datetime),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),cast(Endtime as datetime) )%60 
+			) as datetime),108)
+
+WHEN CAST(Tmp_NetwrkDay AS NUMERIC) = 2 THEN 
+			
+			/*Start Time */
+			convert(varchar(20), cast(convert (varchar(20), datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%60 
+			)as datetime)
+
+			+
+
+			cast(convert (varchar(20), datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%60 
+			)as datetime) ,108)		
+WHEN CAST(Tmp_NetwrkDay AS NUMERIC) > 2 THEN 
+		/*Hour Start*/
+		
+		CASE WHEN
+			LEN(cast (
+		cast(
+		datepart(hh,
+			/*Time calculation start*/
+			convert(varchar(20), cast(convert (varchar(20), datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%60 
+			)as datetime)
+
+			+
+			cast(convert (varchar(20), datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%60 
+			)as datetime) ,108)	
+			
+			
+			)
+			/*Time calculation End*/
+			 as numeric)
+			+
+			(Tmp_NetwrkDay-2)*8 as varchar)
+		/*Hour End*/)=1 THEN
+		+
+		'0'
+		+
+		cast (
+		cast(
+		datepart(hh,
+			/*Time calculation start*/
+			convert(varchar(20), cast(convert (varchar(20), datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%60 
+			)as datetime)
+
+			+
+			cast(convert (varchar(20), datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%60 
+			)as datetime) ,108)	
+			
+			
+			)
+			/*Time calculation End*/
+			 as numeric)
+			+
+			(Tmp_NetwrkDay-2)*8 as varchar)
+		/*Hour End*/
+		ELSE
+		cast (
+		cast(
+		datepart(hh,
+			/*Time calculation start*/
+			convert(varchar(20), cast(convert (varchar(20), datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%60 
+			)as datetime)
+
+			+
+			cast(convert (varchar(20), datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%60 
+			)as datetime) ,108)	
+			
+			
+			)
+			/*Time calculation End*/
+			 as numeric)
+			+
+			(Tmp_NetwrkDay-2)*8 as varchar)
+		END
+		/*Hour End*/ 
+			+
+			':'
+			+
+		/*Minutes Start*/ 
+		
+		CASE WHEN LEN(cast(
+		datepart(mi,
+			/*Time calculation start*/
+			convert(varchar(8), cast(convert (varchar(20), datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%60 
+			)as datetime)
+
+			+
+			cast(convert (varchar(20), datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%60 
+			)as datetime) ,108)	
+			)
+			/*Time calculation End*/
+		/*Minutes End*/ 
+		as varchar)
+			)=1 THEN
+			'0'+
+			cast(
+		datepart(mi,
+			/*Time calculation start*/
+			convert(varchar(8), cast(convert (varchar(20), datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%60 
+			)as datetime)
+
+			+
+			cast(convert (varchar(20), datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%60 
+			)as datetime) ,108)	
+			)
+			/*Time calculation End*/
+		/*Minutes End*/ 
+		as varchar)
+
+
+
+		ELSE
+		cast(
+		datepart(mi,
+			/*Time calculation start*/
+			convert(varchar(8), cast(convert (varchar(20), datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%60 
+			)as datetime)
+
+			+
+			cast(convert (varchar(20), datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%60 
+			)as datetime) ,108)	
+			)
+			/*Time calculation End*/
+		/*Minutes End*/ 
+		as varchar)
+		END
+		+
+		':'
+		+
+		
+		/*Seconds Start*/
+		
+		CASE WHEN LEN(cast(
+		datepart(ss,
+			/*Time calculation start*/
+			convert(varchar(8), cast(convert (varchar(20), datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%60 
+			)as datetime)
+
+			+
+			cast(convert (varchar(20), datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%60 
+			)as datetime) ,108)	
+			)
+			/*Time calculation End*/
+		/*Seconds End*/ 
+		AS VARCHAR(8)))=1 THEN
+		'0'
+		+
+		cast(
+		datepart(ss,
+			/*Time calculation start*/
+			convert(varchar(8), cast(convert (varchar(20), datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%60 
+			)as datetime)
+
+			+
+			cast(convert (varchar(20), datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%60 
+			)as datetime) ,108)	
+			)
+			/*Time calculation End*/
+		/*Seconds End*/ 
+		AS VARCHAR(8))
+		ELSE
+		cast(
+		datepart(ss,
+			/*Time calculation start*/
+			convert(varchar(8), cast(convert (varchar(20), datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,cast(Stdttime as datetime),Convert(datetime, Convert(char(10), Stdttime, 103) + ' ' + Convert(char(8), @DLEndDtTime, 108), 103) )%60 
+			)as datetime)
+
+			+
+			cast(convert (varchar(20), datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )/3600
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%3600/60
+			)+':'+
+			convert(varchar(20),datediff(s,Convert(datetime, Convert(char(10), Endtime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103),cast(Endtime as datetime) )%60 
+			)as datetime) ,108)	
+			)
+			/*Time calculation End*/
+		/*Seconds End*/ 
+		AS VARCHAR(8))
+		END
+
+END
+/*If Daylight Savings Start or End Replace, if Daylight Savings Start Update (14:30:00 - 22:30:00) : If Daylight savings End(13:30:00 - 21:30:00) Here -- End*/
+
+/*SLA Calcuation --- End*/
+/*Update Quries --- End*/

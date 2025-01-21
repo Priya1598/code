@@ -1,0 +1,224 @@
+Use BOI_SLA
+
+Go
+
+update [dbo].[A1_DBPMS_Inprog_Table] set [End Time]=[Start Time],[End Date]= [Start Date] where [End Date]='' and[End Time]=''
+
+Go
+update [dbo].[A1_DBPMS_Inprog_Table]
+set [A1_DBPMS_Inprog_Table].[CmbineStartDateTime] = convert(datetime2,CONVERT(varchar(10), [Start Date])+ ' ' +convert(varchar(16), [Start Time])), IdStatus='wip'
+GO
+
+update [dbo].[A1_DBPMS_Inprog_Table]
+set [A1_DBPMS_Inprog_Table].[CmbineEndDateTime] = convert(datetime2,CONVERT(varchar(10), [End Date])+ ' ' +convert(varchar(16), [End Time]))
+GO
+
+update [dbo].[A2_DBPMS_Comp_Table]
+set [A2_DBPMS_Comp_Table].[CmbineStartDateTime] = convert(datetime2,CONVERT(varchar(10), [Start Date])+ ' ' +convert(varchar(16), [Start Time])),IdStatus = 'completed'
+GO
+
+update [dbo].[A2_DBPMS_Comp_Table]
+set [A2_DBPMS_Comp_Table].[CmbineEndDateTime] = convert(datetime2,CONVERT(varchar(10), [End Date])+ ' ' +convert(varchar(16), [End Time]))
+GO
+
+
+update [dbo].[A1_DBPMS_Inprog_Table]
+set CmbineStartDateTime= Null
+where CmbineStartDateTime='1900-01-01 00:00:00.000'
+
+update [dbo].[A1_DBPMS_Inprog_Table]
+set CmbineEndDateTime= Null
+where CmbineEndDateTime='1900-01-01 00:00:00.000'
+
+
+update [dbo].[A2_DBPMS_Comp_Table]
+set CmbineStartDateTime= Null
+where CmbineStartDateTime='1900-01-01 00:00:00.000'
+
+update [dbo].[A2_DBPMS_Comp_Table]
+set CmbineEndDateTime= Null
+where CmbineEndDateTime='1900-01-01 00:00:00.000'
+
+go
+
+DELETE FROM [dbo].[A3_Overall_DBPMS_Data] WHERE [Review ID] in (SELECT DISTINCT [Review ID] FROM [dbo].[A1_DBPMS_Inprog_Table])
+
+Go
+
+DELETE FROM [dbo].[A3_Overall_DBPMS_Data] WHERE [Review ID] in (SELECT DISTINCT [Review ID] FROM [dbo].[A2_DBPMS_Comp_Table])
+GO
+
+insert [dbo].[A3_Overall_DBPMS_Data] ([Review ID],[Review Type],[User Name] ,
+ [User ID],[User Role],[Date Of Arrival],[Start Date],
+ [Start Time],[End Date],[End Time], [Duration (HH MM SS)],
+ [Steps], [Final Decision], [CmbineStartDateTime],[CmbineEndDateTime],IdStatus)
+ select [Review ID],[Review Type],[User Name],[User ID],[User Role],[Date Of Arrival],[Start Date],
+ [Start Time],[End Date],[End Time], [Duration (HH MM SS)],
+ [Steps], [Final Decision], [CmbineStartDateTime],[CmbineEndDateTime],IdStatus
+from [dbo].[A1_DBPMS_Inprog_Table]
+ where [dbo].[A1_DBPMS_Inprog_Table].[Start Date] is not null and [dbo].[A1_DBPMS_Inprog_Table].[Start Date] !='' AND [dbo].[A1_DBPMS_Inprog_Table].[Review Type]!='Non Personal Periodic Review'
+order by [dbo].[A1_DBPMS_Inprog_Table].[Review ID] ASC, cast([dbo].[A1_DBPMS_Inprog_Table].[Start Date] as date) ASC, cast([dbo].[A1_DBPMS_Inprog_Table].[Start Time] as time) ,cast([dbo].[A1_DBPMS_Inprog_Table].[End Date] as date) ,cast([dbo].[A1_DBPMS_Inprog_Table].[End Time] as time)ASC
+
+
+GO
+
+insert [dbo].[A3_Overall_DBPMS_Data] ([Review ID],[Review Type],[User Name] ,
+ [User ID],[User Role],[Date Of Arrival],[Start Date],
+ [Start Time],[End Date],[End Time], [Duration (HH MM SS)],
+ [Steps], [Final Decision],[NSTP   STP],[Automated Risk],[Final Risk], [CmbineStartDateTime],[CmbineEndDateTime],IdStatus)
+ select [Review ID],[Review Type],[User Name],[User ID],[User Role],[Date Of Arrival],[Start Date],
+ [Start Time],[End Date],[End Time], [Duration (HH MM SS)],
+ [Steps], [Final Decision], [NSTP   STP],[Automated Risk],[Final Risk],[CmbineStartDateTime],[CmbineEndDateTime],IdStatus
+ from [dbo].[A2_DBPMS_Comp_Table]
+ where [dbo].[A2_DBPMS_Comp_Table].[Start Date] is not null and [dbo].[A2_DBPMS_Comp_Table].[Start Date] !='' AND [dbo].[A2_DBPMS_Comp_Table].[Review Type]!='Non Personal Periodic Review'
+order by [dbo].[A2_DBPMS_Comp_Table].[Review ID] ASC, cast([dbo].[A2_DBPMS_Comp_Table].[Start Date] as date) ASC, cast([dbo].[A2_DBPMS_Comp_Table].[Start Time] as time),cast([dbo].[A2_DBPMS_Comp_Table].[End Date] as date) ASC, cast([dbo].[A2_DBPMS_Comp_Table].[End Time] as time) ASC
+GO
+
+
+If exists(select  * from sysobjects where  type='V' and name ='unqRid')
+drop view unqRid
+Go
+
+create view unqRid as select distinct [Review ID] from [dbo].[A2_DBPMS_Comp_Table]
+Go
+
+update A  
+set IdStatus ='completed' 
+from [dbo].[A3_Overall_DBPMS_Data] A, unqRid B 
+where A.[Review ID] = B.[Review ID]
+Go
+
+/*Start - This query add on 31-Mar-2022 due to completed reviewds dump not come in DBPMS extract dump so previous compelted query  is not updated the status as completed*/
+
+truncate table CompletedReviewIds
+
+Go
+
+insert into CompletedReviewIds
+select [Review ID] from [dbo].[A3_Overall_DBPMS_Data] where datepart(year,[Date Of Arrival])>= datepart(year,getDATE())-1 and Steps='Peer Review' and [Final Decision] ='Completed'
+group by [Review ID] 
+
+Go
+
+update A  
+set IdStatus ='completed' 
+from [dbo].[A3_Overall_DBPMS_Data] A, CompletedReviewIds B 
+where A.[Review ID] = B.[Review ID]
+
+/*End -  This query add on 31-Mar-2022 due to completed reviewds dump not come in DBPMS extract dump so previous compelted query  is not updated the status as completed*/
+
+Go
+
+
+
+/*Check RM Refferal View table exist or not,if exist delete it or create next query --- Start*/
+if exists(select  * from sysobjects where  type='V' and name ='VW_DBPMS_MaxRMRefferal')
+drop view VW_DBPMS_MaxRMRefferal
+Go
+/*Check RM Refferal View table exist or not,if exist delete it or create next query --- End*/
+
+/*Create View for RM Refferal deatials --- Start*/
+CREATE VIEW VW_DBPMS_MaxRMRefferal 
+AS
+select [Review ID],max(RowNum) as maxnum from [dbo].[A3_Overall_DBPMS_Data] 
+where [Final Decision] like 'Referred%'  and idStatus = 'wip' group by [Review ID];
+Go
+/*This code to create RM Refferal deatials --- End*/
+
+
+/*Update Hold-Status in [A3_Overall_DBPMS_Data] table using VW_DBPMS_MaxRMRefferal table --- start*/
+update am
+set am.idStatus = 'Hold' 
+from  [dbo].[A3_Overall_DBPMS_Data] am, VW_DBPMS_MaxRMRefferal bm
+where am.[review id]=bm.[review id] and am.RowNum<=bm.maxnum
+
+/*Update Hold-Status in [A3_Overall_DBPMS_Data] table using VW_DBPMS_MaxRMRefferal table --- End*/
+
+
+
+
+/*Using VW_DBPMS_MaxRMRefferal reset the start and end time in A3_Overall_DBPMS_Data --- Start*/
+update a
+set CmbineEndDateTime=NULL, CmbineStartDateTime=NULL
+from  [dbo].[A3_Overall_DBPMS_Data] a, VW_DBPMS_MaxRMRefferal b
+where a.[review id]=b.[review id] and a.RowNum<=b.maxnum
+Go
+/*Using VW_DBPMS_MaxRMRefferal reset the start and end time in A3_Overall_DBPMS_Data --- End*/
+
+
+
+/*Check RM Refferal View table exist or not,if exist delete it or create next query --- Start*/
+if exists(select  * from sysobjects where  type='V' and name ='VW_DBPMS_MaxRAReject')
+drop view VW_DBPMS_MaxRAReject
+Go
+CREATE VIEW VW_DBPMS_MaxRAReject
+AS
+select [Review ID],max(RowNum) as maxnum from [dbo].[A3_Overall_DBPMS_Data] 
+where [Final Decision] like 'Sent to GBR from PR - Ok to RA Reject%'  and idStatus = 'wip' group by [Review ID]
+Go
+/*Check RM Refferal View table exist or not,if exist delete it or create next query --- End*/
+
+
+/*Using VW_DBPMS_MaxRMRefferal reset the start and end time in A3_Overall_DBPMS_Data --- Start*/
+update s
+set CmbineEndDateTime=NULL, CmbineStartDateTime=NULL
+from  [dbo].[A3_Overall_DBPMS_Data] s, VW_DBPMS_MaxRAReject t
+where s.[review id]=t.[review id] and s.RowNum<=t.maxnum
+Go
+/*Using VW_DBPMS_MaxRMRefferal reset the start and end time in A3_Overall_DBPMS_Data --- End*/
+
+
+
+
+/*Check Last Row View table exist or not,if exist delete it or create next query --- Start*/
+if exists(select  * from sysobjects where  type='V' and name ='VW_DBPMS_MaxLastEntry')
+drop view VW_DBPMS_MaxLastEntry
+Go
+/*Check Last Row View table exist or not,if exist delete it or create next query --- End*/
+
+/*Create View for Last Entry deatials --- Start*/
+CREATE VIEW VW_DBPMS_MaxLastEntry
+AS
+select [Review ID],max(RowNum) as maxnum from [dbo].[A3_Overall_DBPMS_Data] where idStatus = 'wip' group by [Review ID]
+Go
+/*Create View for Last Entry deatials --- End*/
+
+
+/*Rest Table Tbl_4_DBPMS_LastRowEntry*/
+truncate table Tbl_4_DBPMS_LastRowEntry
+
+
+/*Insert the last row details to Tbl_4_DBPMS_LastRowEntry using VW_DBPMS_MaxLastEntry table --- Start*/
+GO
+
+insert into Tbl_4_DBPMS_LastRowEntry ([Review ID],[Review Type],[User Name],[User ID],[User Role],[Date Of Arrival],[Start Date],[Start Time],[End Date],[End Time], [Duration (HH MM SS)],[Steps],[Final Decision],[CmbineStartDateTime],[CmbineEndDateTime],[IdStatus],[RowNum])
+select aa.[Review ID], aa.[Review Type],aa.[User Name],
+ aa.[User ID],aa.[User Role],aa.[Date Of Arrival],aa.[Start Date],
+ aa.[Start Time],aa.[End Date],aa.[End Time], aa.[Duration (HH MM SS)],
+ aa.[Steps], aa.[Final Decision], aa.[CmbineStartDateTime],aa.[CmbineEndDateTime],aa.[IdStatus],aa.[RowNum] from  [dbo].[A3_Overall_DBPMS_Data] aa, VW_DBPMS_MaxLastEntry bb
+where aa.[review id]=bb.[review id] and aa.RowNum=bb.maxnum and aa.[Final Decision]<>'Sent to GBR from PR - Ok to RA Reject' and datepart(year,[Date Of Arrival])>2017 AND  [Review Type]!='Non Personal Periodic Review'
+
+Go
+/*Insert the last row details to Tbl_4_DBPMS_LastRowEntry using VW_DBPMS_MaxLastEntry table --- Start*/
+
+
+/*Create view table for Min Start Time in VW_DBPMS_MinTime - - - Start*/
+if exists(select  * from sysobjects where  type='V' and name ='VW_DBPMS_MinTime')
+drop view VW_DBPMS_MinTime 
+go
+create view VW_DBPMS_MinTime 
+as 
+select [Review id],min(cmbineStartDateTime) as MinStartTime from [dbo].[A3_Overall_DBPMS_Data] where idStatus = 'wip' group by [review id]
+go
+/*Create view table for Min Start Time in VW_DBPMS_MinTime - - - End*/
+
+
+
+/*Update Min Start Time VW_DBPMS_MinTime to Tbl_4_DBPMS_LastRowEntry - - - Start*/
+update mn
+set cmbineStartDateTime = mm.MinStartTime,cmbineEndDateTime = CURRENT_TIMESTAMP
+from Tbl_4_DBPMS_LastRowEntry mn, VW_DBPMS_MinTime mm
+where mn.[Review ID]= mm.[Review ID]
+/*Update Min Start Time VW_DBPMS_MinTime to Tbl_4_DBPMS_LastRowEntry - - - End*/
+
+go

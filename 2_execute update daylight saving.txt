@@ -1,0 +1,699 @@
+Use BOI_SLA
+
+
+Go
+
+/*Update Quries --- Start*/
+
+/*1_Update SLA Overall Target --- Start*/
+
+/*
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_SLA_Target='16:00:00' 
+where [Review Type] in ('NIA NCOB STANDARD' ,'SME NCOB' ,'NCOB BIF', 'Medium NCOB Standard' ,'Corp NCOB Standard' )
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_SLA_Target='16:00:00' 
+where [Review Type] in ('NIA NCOB ENHANCED' , 'Medium NCOB Enhanced','Corp NCOB Enhanced') /* SLA value changed 8 hrs to 16 hrs on 21-Sep-2020 for enchanced*/
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_SLA_Target='16:00:00' 
+where [Review Type] in ('NIA NCOB EMERGENCY','Medium NCOB Emergency' ,'Corp NCOB Emergency') /* SLA value changed 8 hrs to 16 hrs on 21-Sep-2020 for Emergency*/
+*/
+
+/* updated on 16/11/2020 -- Start*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_SLA_Target='16:00:00' 
+/* updated on 16/11/2020 -- End*/
+
+go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_SLA_Target='4:00:00' 
+where [Review Type] in ('Trade Finance') /* No changes for TF SLA grid on 21-Sep-2020 */
+
+go
+
+/*Update SLA Overall Target --- End*/
+
+/*If RM revert cases then need to change SLA 16hrs to 8 hrs --- Start updated on 21-Sep-2020*/
+
+Drop table tbl_RMcases
+Go
+select [Review ID],[Steps],[Final Decision] into tbl_RMcases from [dbo].[A3_Overall_DBPMS_Data] where datepart(year,[Date Of Arrival])>=2020 and [Final Decision] like '%Referred to%' and IdStatus!='Completed' and [Steps]='Peer Review' group by [Review ID],[Final Decision] ,[Steps]
+
+Go
+
+/*update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Tmp_SLA_Target] ='8:00:00'
+from [dbo].[Tbl_4_DBPMS_LastRowEntry] x, tbl_RMcases y
+where x.[Review ID]=y.[Review ID] and x.[Review Type]!='Trade Finance' */
+
+/*If RM revert cases then need to change SLA 16hrs to 8 hrs --- Endupdated on 21-Sep-2020*/
+Go
+
+/*2_Segments Update Quries --- Start*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_Segment = 'SME'
+where [Review Type]= 'SME NCOB'
+go
+
+
+/*2_Updated on 10-Dec-2019 Start*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_Segment = 'SME-BIF'
+where  [Review Type]= 'NCOB BIF'
+go
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_Segment = 'NIA'
+where [Review Type] like 'NIA%' 
+go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_Segment = 'MB'
+where [Review Type] like 'Medium%' 
+go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_Segment = 'Corp'
+where [Review Type] Like 'Corp%' 
+go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_Segment = 'TF'
+where [Review Type] Like 'Trade Finance' 
+go
+
+/*Segments Update Quries --- End*/
+
+
+/*3_Status Update Quries --- Start*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_Status = 'Hold'
+where [Final Decision] Like 'Referred%' 
+go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_Status = 'RA Reject'
+where [Final Decision] like 'Sent to GBR from PR - Ok to RA Reject%' 
+go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set Tmp_Status = 'wip'
+where Tmp_Status IS NULL
+go
+
+update [BOI_SLA].DBO.[Tbl_4_DBPMS_LastRowEntry]
+
+set [Tmp_Status]='Exclusion'
+
+from [BOI_SLA].[dbo].[Tbl_ExclutionReviewID] exl  
+ 
+where [Tbl_4_DBPMS_LastRowEntry].[Review ID] = exl.[Review_ID]
+
+Go
+
+/*Status Update Quries --- End*/
+
+
+
+/*Update Sat & Sun to working days an reset the timings--- Start updated on 23-Nov-2019*/
+Declare @DLStartDtTime varchar(30) = (select Daylight_Start_Time from Daylight_Savings_Timings)
+Declare @DLEndDtTime varchar(30) = (select Daylight_End_Time from Daylight_Savings_Timings)
+
+Declare @ShftSttDtTime numeric = (select cast(replace(replace(Daylight_Start_Time,':00',''),':','') as numeric) from Daylight_Savings_Timings)
+Declare @ShftEndDtTime numeric = (select cast(replace(replace(Daylight_End_Time,':00',''),':','') as numeric) from Daylight_Savings_Timings)
+
+/*set @DLStartDtTime = (select Daylight_Start_Time from Daylight_Savings_Timings)
+set @DLEndDtTime = (select Daylight_End_Time from Daylight_Savings_Timings)*/
+
+/*If Daylight Savings Start or End Replace, if Daylight Savings Start Update (14:30:00 - 22:30:00) : If Daylight savings End(13:30:00 - 21:30:00) Here -- Start*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+
+set Stdttime =
+CASE
+	WHEN 
+		CAST(FORMAT(cast (CmbineStartDateTime AS DATETIME),'HHmm') AS NUMERIC) BETWEEN 0 AND @ShftSttDtTime THEN
+				 Convert(datetime, Convert(char(10), CmbineStartDateTime, 103) + ' ' + Convert(char(8), @DLStartDtTime, 108), 103)
+
+	WHEN 
+		CAST(FORMAT(CAST (CmbineStartDateTime AS DATETIME),'HHmm') AS NUMERIC) BETWEEN @ShftEndDtTime  AND 2359 THEN
+				 CONVERT(DATETIME, CONVERT(CHAR(10), CmbineStartDateTime, 103) + ' ' + CONVERT(CHAR(8), @DLEndDtTime, 108), 103)
+			
+ELSE
+		 Convert(datetime,CmbineStartDateTime)
+END 
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+
+set Endtime =
+CASE
+	WHEN 
+		CAST(FORMAT(cast (CmbineEndDateTime AS DATETIME),'HHmm') AS NUMERIC) BETWEEN 0  AND @ShftSttDtTime THEN
+				 Convert(datetime, Convert(char(10), CmbineEndDateTime, 103) + ' ' + Convert(char(8), @DLStartDtTime , 108), 103)
+
+	WHEN 
+		CAST(FORMAT(CAST (CmbineEndDateTime AS DATETIME),'HHmm') AS NUMERIC) BETWEEN @ShftEndDtTime  AND 2359 THEN
+				 CONVERT(DATETIME, CONVERT(CHAR(10), CmbineEndDateTime, 103) + ' ' + CONVERT(CHAR(8), @DLEndDtTime , 108), 103)
+			
+ELSE
+	Convert(datetime,CmbineEndDateTime)
+END 
+
+/*If Daylight Savings Start or End Replace, if Daylight Savings Start Update (14:30:00 - 22:30:00) : If Daylight savings End(13:30:00 - 21:30:00) Here -- End*/
+
+/*SlA calcualtion --- Start*/
+
+Go
+
+/*Update boi hoday for decemer 2019 due to continue leaves--- Start*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2019-12-30'))+ ' 13:30:00')
+where datepart (month, Stdttime)='12' and datepart (year, Stdttime)='2019' and datepart (day, Stdttime) between 25 and 27
+/*Update boi hoday for decemer 2019 due to continue leaves--- End*/
+
+Go
+
+/*Update boi hoday for Jan2020 due to leaves--- Start*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-01-02'))+ ' 13:30:00')
+where datepart (month, Stdttime)='01' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 1 and 1
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-03-18'))+ ' 13:30:00')
+where datepart (month, Stdttime)='03' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 17 and 17
+
+
+Go
+
+/*Update boi hoday for Jan2020 due to leaves--- End*/
+
+Go
+Declare @DLStartDtTime varchar(30) = (select Daylight_Start_Time from Daylight_Savings_Timings)
+
+/*Update Sat & Sun to working days --- Start updated on 23-Nov-2019*/
+/*Daylight Savings update -- Start*/
+update [Tbl_4_DBPMS_LastRowEntry]
+SET Stdttime =
+case  
+WHEN format(Stdttime,'ddd')='Sun' THEN CONVERT(VARCHAR(10),Stdttime+1, 101) +' '+convert(varchar(8),@DLStartDtTime)
+WHEN format(Stdttime,'ddd')='Sat' THEN CONVERT(VARCHAR(10),Stdttime+2, 101) +' '+convert(varchar(8),@DLStartDtTime)
+ELSE Stdttime 
+END
+
+/*Update Sat & Sun to working days --- End*/
+Go
+Declare @DLEndDtTime varchar(30) = (select Daylight_End_Time from Daylight_Savings_Timings)
+
+update [Tbl_4_DBPMS_LastRowEntry]
+SET Endtime =
+case  
+WHEN format(Endtime,'ddd')='Sun' THEN CONVERT(VARCHAR(10),Endtime-2, 101) +' '+convert(varchar(8),@DLEndDtTime)   
+WHEN format(Endtime,'ddd')='Sat' THEN CONVERT(VARCHAR(10),Endtime-1, 101) +' '+convert(varchar(8),@DLEndDtTime)
+ELSE 
+
+Endtime
+
+END
+/*Daylight Savings update -- End*/
+
+/*Update Sat & Sun to working days --- End updated on 23-Nov-2019*/
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-04-14'))+ ' 13:30:00')
+where datepart (month, Stdttime)='04' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 10 and 10
+
+Go
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-04-14'))+ ' 13:30:00')
+where datepart (month, Stdttime)='04' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 13 and 13
+
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-05-01'))+ ' 13:30:00')
+where datepart (month, Stdttime)='05' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 4 and 4
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-05-05'))+ ' 13:30:00')
+where datepart (month, Stdttime)='05' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 4 and 4
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-06-02'))+ ' 13:30:00')
+where datepart (month, Stdttime)='06' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 1 and 1
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-08-04'))+ ' 13:30:00')
+where datepart (month, Stdttime)='08' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 3 and 3
+
+Go
+/*BEC teting so 21-Sep-2020 not consider to calculate SLA update received from Kirth- Updated on 21-Sep-2020i--Start*/
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-09-22'))+ ' 13:30:00')
+where datepart (month, Stdttime)='09' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 21 and 21
+
+
+/*BEC DR teting so 21-Dec-2020 not consider to calculate SLA update received from Ashutosh- Updated on 21-Dec-2020--Start*/
+/*Go*/
+
+/*update [dbo].[Tbl_4_DBPMS_LastRowEntry]*/
+/*set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-12-18'))+ ' 21:30:00')*/
+/*where datepart (month, Stdttime)='12' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 21 and 21*/
+
+
+
+Go
+
+
+/*If Need to run BOI Holidays need to update timings here*/
+
+/*Start time update*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-12-18'))+ ' 21:30:00')
+where datepart (month, Stdttime)='12' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 21 and 21
+
+Go
+
+/*End Time Update*/
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-12-18'))+ ' 21:30:00')
+where datepart (month, Endtime)='12' and datepart (year, Endtime)='2020' and datepart (day, Endtime) between 21 and 21
+
+Go
+
+
+
+
+/*Start time update*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-12-30'))+ ' 13:30:00')
+where datepart (month, Stdttime)='12' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 25 and 25
+
+Go
+
+
+/*Start time update*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-12-30'))+ ' 21:30:00')
+where datepart (month, Stdttime)='12' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 28 and 28
+
+Go
+
+
+/*Start time update*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2020-12-30'))+ ' 21:30:00')
+where datepart (month, Stdttime)='12' and datepart (year, Stdttime)='2020' and datepart (day, Stdttime) between 29 and 29
+
+Go
+
+
+
+/*Start time update*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-1-4'))+ ' 13:30:00')
+where datepart (month, Stdttime)='01' and datepart (year, Stdttime)='2021' and datepart (day, Stdttime) between 1 and 1
+
+Go
+
+/*Start time update Tomorrow need to change 16 to 18*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-3-16'))+ ' 21:30:00')
+where datepart (month, Stdttime)='03' and datepart (year, Stdttime)='2021' and datepart (day, Stdttime) between 17 and 17
+
+
+
+/*Start time update Tomorrow need to change 02*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-4-6'))+ ' 13:30:00')
+where datepart (month, Stdttime)='04' and datepart (year, Stdttime)='2021' and datepart (day, Stdttime) between 2 and 2
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-4-6'))+ ' 13:30:00')
+where datepart (month, Stdttime)='04' and datepart (year, Stdttime)='2021' and datepart (day, Stdttime) between 5 and 5
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-4-30'))+ ' 21:30:00')
+where datepart (month, Stdttime)='05' and datepart (year, Stdttime)='2021' and datepart (day, Stdttime) between 3 and 3
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-6-4'))+ ' 21:30:00')
+where datepart (month, Stdttime)='06' and datepart (year, Stdttime)='2021' and datepart (day, Stdttime) between 7 and 7
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-7-30'))+ ' 21:30:00')
+where datepart (month, Stdttime)='08' and datepart (year, Stdttime)='2021' and datepart (day, Stdttime) between 2 and 2
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-10-22'))+ ' 21:30:00')
+where datepart (month, Stdttime)='10' and datepart (year, Stdttime)='2021' and datepart (day, Stdttime) between 25 and 25
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-11-03'))+ ' 21:30:00')
+where datepart (month, Stdttime)='11' and datepart (year, Stdttime)='2021' and datepart (day, Stdttime) between 4 and 4
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-12-24'))+ ' 21:30:00')
+where datepart (month, Stdttime)='12' and datepart (year, Stdttime)='2021' and datepart (day, Stdttime) between 27 and 29
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2021-12-31'))+ ' 21:30:00')
+where datepart (month, Stdttime)='01' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 3 and 3
+
+
+/*Below for 14-Jan-2022 added in Boi Holiday List-JK Sent an approval email on 13-Jan-2022*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-1-13'))+ ' 21:30:00')
+where datepart (month, Stdttime)='01' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 14 and 14
+
+
+/*Below for 26-Jan-2022 added in Boi Holiday List-JK Sent an approval email */
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-1-25'))+ ' 21:30:00')
+where datepart (month, Stdttime)='01' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 26 and 26
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-3-16'))+ ' 21:30:00')
+where datepart (month, Stdttime)='03' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 17 and 17
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-3-16'))+ ' 21:30:00')
+where datepart (month, Stdttime)='03' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 18 and 18
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-3-16'))+ ' 21:30:00')
+where datepart (month, Stdttime)='03' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 19 and 19
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-3-16'))+ ' 21:30:00')
+where datepart (month, Stdttime)='03' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 20 and 20
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-4-14'))+ ' 21:30:00')
+where datepart (month, Stdttime)='04' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 15 and 18
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-4-29'))+ ' 21:30:00')
+where datepart (month, Stdttime)='05' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 2 and 2
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-6-03'))+ ' 21:30:00')
+where datepart (month, Stdttime)='06' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 6 and 6
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-7-29'))+ ' 21:30:00')
+where datepart (month, Stdttime)='08' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 1 and 1
+
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-10-21'))+ ' 21:30:00')
+where datepart (month, Stdttime)='10' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 24 and 24
+
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-10-28'))+ ' 21:30:00')
+where datepart (month, Stdttime)='10' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 31 and 31
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-12-23'))+ ' 22:30:00')
+where datepart (month, Stdttime)='12' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 24 and 28
+
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-12-30'))+ ' 22:30:00')
+where datepart (month, Stdttime)='12' and datepart (year, Stdttime)='2022' and datepart (day, Stdttime) between 31 and 31
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-12-30'))+ ' 22:30:00')
+where datepart (month, Stdttime)='01' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 1 and 2
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-02-03'))+ ' 22:30:00')
+where datepart (month, Stdttime)='02' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 6 and 6
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-03-16'))+ ' 22:30:00')
+where datepart (month, Stdttime)='03' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 17 and 17
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-04-06'))+ ' 21:30:00')
+where datepart (month, Stdttime)='04' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 7 and 7
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-04-06'))+ ' 21:30:00')
+where datepart (month, Stdttime)='04' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 10 and 10
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-04-28'))+ ' 21:30:00')
+where datepart (month, Stdttime)='05' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 01 and 01
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-06-02'))+ ' 21:30:00')
+where datepart (month, Stdttime)='06' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 05 and 05
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-08-04'))+ ' 21:30:00')
+where datepart (month, Stdttime)='08' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 07 and 07
+
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-10-27'))+ ' 21:30:00')
+where datepart (month, Stdttime)='10' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 30 and 30
+
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-11-10'))+ ' 21:30:00')
+where datepart (month, Stdttime)='11' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 13 and 13
+
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-12-22'))+ ' 21:30:00')
+where datepart (month, Stdttime)='12' and datepart (year, Stdttime)='2023' and datepart (day, Stdttime) between 25 and 27
+
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-12-29'))+ ' 21:30:00')
+where datepart (month, Stdttime)='01' and datepart (year, Stdttime)='2024' and datepart (day, Stdttime) between 1 and 1
+
+
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-01-12'))+ ' 21:30:00')
+where datepart (month, Stdttime)='01' and datepart (year, Stdttime)='2024' and datepart (day, Stdttime) between 15 and 15
+
+
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-02-02'))+ ' 21:30:00')
+where datepart (month, Stdttime)='02' and datepart (year, Stdttime)='2024' and datepart (day, Stdttime) between 05 and 05
+
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-03-15'))+ ' 22:30:00')
+where datepart (month, Stdttime)='03' and datepart (year, Stdttime)='2024' and datepart (day, Stdttime) between 18 and 18
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-03-28'))+ ' 22:30:00')
+where datepart (month, Stdttime)='03' and datepart (year, Stdttime)='2024' and datepart (day, Stdttime) between 29 and 29
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-03-28'))+ ' 22:30:00')
+where datepart (month, Stdttime)='04' and datepart (year, Stdttime)='2024' and datepart (day, Stdttime) between 01 and 01
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-05-03'))+ ' 21:30:00')
+where datepart (month, Stdttime)='05' and datepart (year, Stdttime)='2024' and datepart (day, Stdttime) between 06 and 06
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-05-31'))+ ' 21:30:00')
+where datepart (month, Stdttime)='06' and datepart (year, Stdttime)='2024' and datepart (day, Stdttime) between 03 and 03
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Stdttime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-08-02'))+ ' 21:30:00')
+where datepart (month, Stdttime)='08' and datepart (year, Stdttime)='2024' and datepart (day, Stdttime) between 05 and 05
+
+Go
+/*End Time Update*/
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-3-16'))+ ' 21:30:00')
+where datepart (month, Endtime)='03' and datepart (year, Endtime)='2022' and datepart (day, Endtime) between 17 and 17
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-3-16'))+ ' 21:30:00')
+where datepart (month, Endtime)='03' and datepart (year, Endtime)='2022' and datepart (day, Endtime) between 18 and 18
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-4-14'))+ ' 21:30:00')
+where datepart (month, Endtime)='04' and datepart (year, Endtime)='2022' and datepart (day, Endtime) between 15 and 18
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-4-29'))+ ' 21:30:00')
+where datepart (month, Endtime)='05' and datepart (year, Endtime)='2022' and datepart (day, Endtime) between 2 and 2
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-6-03'))+ ' 21:30:00')
+where datepart (month, Endtime)='06' and datepart (year, Endtime)='2022' and datepart (day, Endtime) between 6 and 6
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-7-29'))+ ' 21:30:00')
+where datepart (month, Endtime)='08' and datepart (year, Endtime)='2022' and datepart (day, Endtime) between 1 and 1
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-10-21'))+ ' 21:30:00')
+where datepart (month, Endtime)='10' and datepart (year, Endtime)='2022' and datepart (day, Endtime) between 24 and 24
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-10-28'))+ ' 21:30:00')
+where datepart (month, Endtime)='10' and datepart (year, Endtime)='2022' and datepart (day, Endtime) between 31 and 31
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-12-23'))+ ' 22:30:00')
+where datepart (month, Endtime)='12' and datepart (year, Endtime)='2022' and datepart (day, Endtime) between 24 and 28
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-12-30'))+ ' 22:30:00')
+where datepart (month, Endtime)='12' and datepart (year, Endtime)='2022' and datepart (day, Endtime) between 31 and 31
+Go
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2022-12-30'))+ ' 22:30:00')
+where datepart (month, Endtime)='01' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 1 and 1
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-2-03'))+ ' 22:30:00')
+where datepart (month, Endtime)='02' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 6 and 6
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-03-16'))+ ' 22:30:00')
+where datepart (month, Endtime)='03' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 17 and 17
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-04-06'))+ ' 21:30:00')
+where datepart (month, Endtime)='04' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 7 and 7
+
+Go
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-04-06'))+ ' 21:30:00')
+where datepart (month, Endtime)='04' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 10 and 10
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-04-28'))+ ' 21:30:00')
+where datepart (month, Endtime)='05' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 01 and 01
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-06-02'))+ ' 21:30:00')
+where datepart (month, Endtime)='06' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 05 and 05
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-08-04'))+ ' 21:30:00')
+where datepart (month, Endtime)='08' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 07 and 07
+
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-10-27'))+ ' 21:30:00')
+where datepart (month, Endtime)='10' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 30 and 30
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-11-10'))+ ' 21:30:00')
+where datepart (month, Endtime)='11' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 13 and 13
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-12-22'))+ ' 21:30:00')
+where datepart (month, Endtime)='12' and datepart (year, Endtime)='2023' and datepart (day, Endtime) between 25 and 27
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2023-12-29'))+ ' 21:30:00')
+where datepart (month, Endtime)='01' and datepart (year, Endtime)='2024' and datepart (day, Endtime) between 1 and 1
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-01-12'))+ ' 21:30:00')
+where datepart (month, Endtime)='01' and datepart (year, Endtime)='2024' and datepart (day, Endtime) between 15 and 15
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-02-02'))+ ' 21:30:00')
+where datepart (month, Endtime)='02' and datepart (year, Endtime)='2024' and datepart (day, Endtime) between 05 and 05
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-03-15'))+ ' 22:30:00')
+where datepart (month, Endtime)='03' and datepart (year, Endtime)='2024' and datepart (day, Endtime) between 18 and 18
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-03-28'))+ ' 22:30:00')
+where datepart (month, Endtime)='03' and datepart (year, Endtime)='2024' and datepart (day, Endtime) between 29 and 29
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-03-28'))+ ' 22:30:00')
+where datepart (month, Endtime)='04' and datepart (year, Endtime)='2024' and datepart (day, Endtime) between 01 and 01
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-05-03'))+ ' 21:30:00')
+where datepart (month, Endtime)='05' and datepart (year, Endtime)='2024' and datepart (day, Endtime) between 06 and 06
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-05-31'))+ ' 21:30:00')
+where datepart (month, Endtime)='06' and datepart (year, Endtime)='2024' and datepart (day, Endtime) between 03 and 03
+
+update [dbo].[Tbl_4_DBPMS_LastRowEntry]
+set [Endtime] = convert(datetime2,CONVERT(varchar(10), convert(date,'2024-08-02'))+ ' 21:30:00')
+where datepart (month, Endtime)='08' and datepart (year, Endtime)='2024' and datepart (day, Endtime) between 05 and 05
+
+/*Update Quries --- End*/
